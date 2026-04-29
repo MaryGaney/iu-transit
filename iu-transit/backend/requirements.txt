@@ -20,11 +20,10 @@ protobuf==4.25.3
 shapely==2.0.4
 geopy==2.4.1
 
-# Data science / ML
+# Data science (lightweight — no torch for production deploy)
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.4.2
-torch==2.3.0
 joblib==1.4.2
 
 # Scheduling / background tasks
@@ -38,3 +37,10 @@ pydantic-settings==2.2.1
 # Utilities
 python-multipart==0.0.9
 pytz==2024.1
+
+# NOTE: torch is intentionally excluded from production.
+# The LSTM training script (app/ml/trainer.py) requires torch,
+# but inference uses the saved .pt file loaded via torch at runtime.
+# If you need to run training on Railway, uncomment the line below,
+# but expect a 5-10 minute build time:
+# torch==2.3.0

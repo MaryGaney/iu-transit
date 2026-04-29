@@ -32,10 +32,16 @@ Feature vector (9 features per timestep):
 import os
 import math
 import numpy as np
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 from typing import Optional
+try:
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import Dataset, DataLoader
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+    nn = None
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -176,6 +182,9 @@ class LSTMPredictor:
 
     def load(self) -> bool:
         """Load model weights from disk. Returns True if successful."""
+        if not TORCH_AVAILABLE:
+            logger.info("PyTorch not installed — using heuristic fallback.")
+            return False
         model_path = settings.lstm_model_path
         if not os.path.exists(model_path):
             logger.info(f"No LSTM model found at {model_path}. Will use schedule fallback.")

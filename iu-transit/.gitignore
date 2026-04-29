@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Data / models (large files, never commit)
+backend/data/*.db
+backend/data/*.pt
+backend/data/*.pkl
+backend/data/*.zip
+
+# Environment
+.env
+.env.local
+backend/.env
+frontend/.env.local
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log

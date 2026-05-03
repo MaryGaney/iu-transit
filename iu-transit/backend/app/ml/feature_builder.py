@@ -1,14 +1,8 @@
 """
 app/ml/feature_builder.py
 ──────────────────────────
-Assembles the feature sequence for a given (route, stop) pair at the current moment.
-Called every inference cycle (every 15 seconds per active vehicle).
-
-Flow:
-  1. Pull the last seq_len TripUpdate rows for this route/stop from DB
-  2. Get current weather severity (from in-memory cache)
-  3. Get students-releasing count for this stop at this time
-  4. Build and return the feature sequence ready for LSTM input
+Assembles the LSTM feature sequence for a given (route, stop) pair.
+Safe to import without PyTorch — lstm_model.py has TORCH_AVAILABLE guards.
 """
 
 from datetime import datetime
@@ -22,7 +16,7 @@ from app.core.logging import logger
 from app.models.gtfs import TripUpdate
 from app.services.weather import get_weather_feature
 from app.services.class_schedule import get_students_releasing
-from app.ml.lstm_model import build_feature_vector, predictor
+from app.ml.lstm_model import build_feature_vector, predictor, TORCH_AVAILABLE
 
 
 async def build_sequence_for_stop(
@@ -33,16 +27,13 @@ async def build_sequence_for_stop(
 ) -> list[list[float]]:
     """
     Build a feature sequence for LSTM inference on a specific route/stop.
-
-    Returns a list of seq_len feature vectors (most recent last).
-    If fewer than seq_len records exist, the earliest record is repeated to fill.
+    Returns seq_len feature vectors (most recent last).
     """
     if now is None:
         now = datetime.utcnow()
 
     seq_len = settings.lstm_sequence_length
 
-    # Fetch recent delay history for this route/stop
     result = await db.execute(
         select(TripUpdate)
         .where(
@@ -53,15 +44,13 @@ async def build_sequence_for_stop(
         .order_by(desc(TripUpdate.timestamp))
         .limit(seq_len)
     )
-    records = list(reversed(result.scalars().all()))  # oldest first
+    records = list(reversed(result.scalars().all()))
 
-    # Current weather and student signals (same for whole sequence)
     weather_severity = get_weather_feature()
-    students_count = await get_students_releasing(db, stop_id, now)
-    students_norm = min(students_count / predictor.max_students, 1.0)
+    students_count   = await get_students_releasing(db, stop_id, now)
+    students_norm    = min(students_count / predictor.max_students, 1.0)
 
     if not records:
-        # No history yet — build a zero-delay sequence with current context
         fv = build_feature_vector(
             hour=now.hour,
             minute=now.minute,
@@ -74,7 +63,6 @@ async def build_sequence_for_stop(
         )
         return [fv] * seq_len
 
-    # Build feature vectors for each historical record
     sequence = []
     for record in records:
         ts = record.timestamp
@@ -90,7 +78,6 @@ async def build_sequence_for_stop(
         )
         sequence.append(fv)
 
-    # Pad to seq_len if needed
     while len(sequence) < seq_len:
         sequence = [sequence[0]] + sequence
 
@@ -104,21 +91,15 @@ async def run_inference_for_stop(
     trip_id: Optional[str] = None,
     scheduled_arrival: Optional[datetime] = None,
 ) -> dict:
-    """
-    Full pipeline: build features → run LSTM → return prediction dict.
-    Also persists the prediction to the DB for later evaluation.
-    """
+    """Full pipeline: build features → run predictor → persist prediction."""
     from app.models.predictions import DelayPrediction
     import json
 
     now = datetime.utcnow()
 
-    sequence = await build_sequence_for_stop(db, route_id, stop_id, now)
-
-    # Get the context signals for the prediction record
+    sequence         = await build_sequence_for_stop(db, route_id, stop_id, now)
     weather_severity = get_weather_feature()
-    students_count = await get_students_releasing(db, stop_id, now)
-    students_norm = min(students_count / predictor.max_students, 1.0)
+    students_count   = await get_students_releasing(db, stop_id, now)
 
     result = predictor.predict(
         sequence=sequence,
@@ -126,7 +107,7 @@ async def run_inference_for_stop(
         weather_severity=weather_severity,
     )
 
-    # Persist prediction (best-effort — don't let a DB write crash the API response)
+    # Persist prediction — best effort, non-fatal
     try:
         prediction = DelayPrediction(
             route_id=route_id,

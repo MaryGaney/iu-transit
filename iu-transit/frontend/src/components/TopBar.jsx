@@ -10,8 +10,11 @@ const WMO_ICONS = {
   80:'🌦',81:'🌧',82:'⛈',95:'⛈',96:'⛈',99:'⛈',
 }
 
-// °C → °F
 const toF = (c) => Math.round(c * 9/5 + 32)
+
+// Only show simulator in dev (localhost) — never in production
+const IS_DEV = window.location.hostname === 'localhost' ||
+               window.location.hostname === '127.0.0.1'
 
 export default function TopBar() {
   const {
@@ -22,25 +25,28 @@ export default function TopBar() {
     showHeatmap, toggleHeatmap,
   } = useTransitStore()
 
-  const [simRunning, setSimRunning] = useState(false)
-  const [simLoading, setSimLoading] = useState(false)
+  const [simRunning, setSimRunning]   = useState(false)
+  const [simLoading, setSimLoading]   = useState(false)
 
   const vehicleCount = Object.keys(vehicles).length
   const noneSelected = Object.keys(activeRoutesMap).length === 0
-
   const weatherIcon  = weather ? (WMO_ICONS[weather.weather_code] ?? '🌡') : ''
   const tempF        = weather ? toF(weather.temperature_c) : null
-  const weatherAlert = weather && (weather.is_raining || weather.is_snowing || weather.is_severe
-    || (tempF !== null && (tempF >= 90 || tempF <= 20)))
+  const weatherAlert = weather && (
+    weather.is_raining || weather.is_snowing || weather.is_severe ||
+    (tempF !== null && (tempF >= 90 || tempF <= 20))
+  )
+
+  const BASE = import.meta.env.VITE_API_URL || ''
 
   async function toggleSimulator() {
     setSimLoading(true)
     try {
       if (simRunning) {
-        await fetch('/api/simulator/stop', { method: 'POST' })
+        await fetch(`${BASE}/api/simulator/stop`, { method: 'POST' })
         setSimRunning(false)
       } else {
-        const res = await fetch('/api/simulator/start?bus_count=10', { method: 'POST' })
+        const res  = await fetch(`${BASE}/api/simulator/start?bus_count=10`, { method: 'POST' })
         const data = await res.json()
         if (data.status === 'started' || data.status === 'already_running') {
           setSimRunning(true)
@@ -74,7 +80,7 @@ export default function TopBar() {
         </span>
       </div>
 
-      {/* Weather — Fahrenheit, alerts for cold/hot/rain */}
+      {/* Weather */}
       {weather && tempF !== null && (
         <div className={`topbar__weather ${weatherAlert ? 'topbar__weather--alert' : ''}`}>
           {weatherIcon} {tempF}°F
@@ -86,7 +92,7 @@ export default function TopBar() {
         </div>
       )}
 
-      {/* Layer + sim controls */}
+      {/* Layer toggles */}
       <div className="topbar__toggles">
         <button
           className={`topbar__toggle ${showRoutes ? 'topbar__toggle--active' : ''}`}
@@ -101,18 +107,20 @@ export default function TopBar() {
           onClick={toggleHeatmap}
           title="Crowding heatmap"
         >🔥 Heat</button>
-        <button
-          className={`sim-btn ${simRunning ? 'sim-btn--active' : ''}`}
-          onClick={toggleSimulator}
-          disabled={simLoading}
-        >{simLoading ? '…' : simRunning ? '⏹ Sim' : '▶ Sim'}</button>
+
+        {/* Simulator only visible on localhost */}
+        {IS_DEV && (
+          <button
+            className={`sim-btn ${simRunning ? 'sim-btn--active' : ''}`}
+            onClick={toggleSimulator}
+            disabled={simLoading}
+          >
+            {simLoading ? '…' : simRunning ? '⏹ Sim' : '▶ Sim'}
+          </button>
+        )}
       </div>
 
-      {/* Route multi-select chips
-          - Default: ALL highlighted, all routes shown
-          - Click a route: ALL deselects, only that route shows
-          - Click more routes: they stack (multi-select)
-          - Click ALL: resets to show everything */}
+      {/* Route multi-select chips */}
       {routes.length > 0 && (
         <div className="route-chips">
           <button
@@ -132,7 +140,7 @@ export default function TopBar() {
                 aria-pressed={active}
                 title={r.long_name || r.route_id}
               >
-                {active && <span className="route-chip__tick">✓</span>}
+                {active && <span className="route-chip__tick">✓ </span>}
                 {r.short_name || r.route_id}
               </button>
             )

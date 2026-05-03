@@ -1,14 +1,15 @@
 // src/components/TravelAgent.jsx
 import { useState, useRef, useEffect } from 'react'
 
+const BASE = import.meta.env.VITE_API_URL || ''
+
 const SUGGESTIONS = [
-  "Starting at Ballantine now, how do I get to Luddy Hall?",
+  "Starting at Ballantine right now, how do I get to Luddy Hall?",
   "Which bus goes from IMU to the law school?",
   "What's the least crowded bus right now?",
-  "Is the route 6 running on time?",
+  "How do I get to SPEA from the Memorial Union?",
 ]
 
-// Safely coerce anything to a displayable string
 const toStr = (v) => {
   if (typeof v === 'string') return v
   if (v == null) return ''
@@ -17,7 +18,7 @@ const toStr = (v) => {
 
 function Message({ msg }) {
   const isUser = msg.role === 'user'
-  const text = toStr(msg.content)
+  const text   = toStr(msg.content)
   return (
     <div className={`ta-msg ${isUser ? 'ta-msg--user' : 'ta-msg--bot'}`}>
       {!isUser && <div className="ta-msg__avatar">🗺️</div>}
@@ -62,37 +63,35 @@ export default function TravelAgent() {
     setInput('')
     setLoading(true)
 
-    // History = everything except greeting and the message we just added
     const history = newMessages
       .slice(1, -1)
       .map(m => ({ role: m.role, content: toStr(m.content) }))
 
     try {
-      const apiBase = import.meta.env.VITE_API_URL || ''
-      const res = await fetch(`${apiBase}/api/travel-agent/chat`, {
+      const res = await fetch(`${BASE}/api/travel-agent/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userText, history }),
       })
 
       if (!res.ok) {
-        // Give a clear message about what went wrong
-        const statusText = res.status === 404
-          ? "Travel agent endpoint not found (404). Make sure you replaced backend/app/main.py and restarted the server."
-          : `Server error ${res.status}. Check the backend terminal for details.`
-        setMessages(prev => [...prev, { role: 'assistant', content: statusText }])
+        const errText = res.status === 404
+          ? "Travel agent not found (404). Make sure backend/app/main.py imports travel_agent and the server restarted."
+          : `Server error ${res.status}. Check Railway logs for details.`
+        setMessages(prev => [...prev, { role: 'assistant', content: errText }])
         return
       }
 
-      const data = await res.json()
-      const reply = toStr(data.reply) || "I got an empty response. Please try again."
+      const data  = await res.json()
+      const reply = toStr(data.reply) || "I got an empty response — please try again."
       setModelUsed(toStr(data.model_used))
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `Connection error: ${e.message}. Make sure the backend is running at localhost:8000.`
-      }])
+      // Distinguish network errors from other errors
+      const msg = e.message.includes('fetch')
+        ? `Network error: could not reach ${BASE || 'the backend'}. Check that VITE_API_URL is set correctly in Vercel.`
+        : `Error: ${e.message}`
+      setMessages(prev => [...prev, { role: 'assistant', content: msg }])
     } finally {
       setLoading(false)
     }
@@ -123,7 +122,9 @@ export default function TravelAgent() {
             <div>
               <div className="ta-header__title">Transit Agent</div>
               <div className="ta-header__sub">
-                {modelUsed ? `Powered by ${modelUsed}` : 'IU Bloomington · Llama via HuggingFace'}
+                {modelUsed && modelUsed !== 'rule-based'
+                  ? `Powered by ${modelUsed}`
+                  : 'IU Bloomington · Mistral-7B'}
               </div>
             </div>
           </div>
